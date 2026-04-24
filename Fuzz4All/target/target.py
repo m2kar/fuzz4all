@@ -227,13 +227,17 @@ class Target(object):
             )
         else:
             self.backend = "huggingface"
+            llm_cfg = (
+                self.config_dict.get("llm", {}) if hasattr(self, "config_dict") else {}
+            )
             self.model = make_model(
                 eos=eos,
                 model_name=model_name,
                 device=self.device,
                 max_length=self.max_length,
+                llm_cfg=llm_cfg,
             )
-            self.m_logger.logo("HuggingFace model loaded", level=LEVEL.INFO)
+            self.m_logger.logo("HuggingFace/OpenAI model loaded", level=LEVEL.INFO)
 
         self.initial_prompt = self.auto_prompt(
             message=self.prompt_used["docstring"],

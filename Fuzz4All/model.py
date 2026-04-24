@@ -20,11 +20,29 @@ def get_ollama_model_name(model_name: str) -> str:
     return model_name
 
 
-def make_model(eos: list, model_name: str, device: str, max_length: int):
+def is_openai_compatible_model(model_name: str) -> bool:
+    return model_name.startswith("openai/")
+
+
+def get_openai_model_name(model_name: str) -> str:
+    if is_openai_compatible_model(model_name):
+        return model_name.split("/", 1)[1]
+    return model_name
+
+
+def make_model(eos: list, model_name: str, device: str, max_length: int, llm_cfg=None):
     if is_ollama_model(model_name):
         return None
-    else:
-        return StarCoder(model_name, device, eos, max_length)
+    if is_openai_compatible_model(model_name):
+        cfg = llm_cfg or {}
+        return OpenAIChatModel(
+            model_name=get_openai_model_name(model_name),
+            eos=eos,
+            max_length=max_length,
+            base_url=cfg.get("base_url", "http://localhost:4000/v1"),
+            api_key=cfg.get("api_key", ""),
+        )
+    return StarCoder(model_name, device, eos, max_length)
 
 
 torch.cuda.empty_cache()
@@ -69,6 +87,61 @@ class EndOfFunctionCriteria(StoppingCriteria):
                         )
             done.append(finished)
         return all(done)
+
+
+class OpenAIChatModel:
+    """OpenAI-compatible chat backend (LiteLLM / vLLM / local gateway).
+
+    Exposes the same `generate(prompt, batch_size, temperature, max_length)`
+    contract as `StarCoder` so it plugs into Target.generate_model unchanged.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        eos: List,
+        max_length: int,
+        base_url: str,
+        api_key: str,
+    ) -> None:
+        from openai import OpenAI
+
+        self.client = OpenAI(base_url=base_url, api_key=api_key or "EMPTY")
+        self.model_name = model_name
+        self.eos = EOF_STRINGS + (eos or [])
+        self.max_length = max_length
+
+    def _one_call(self, prompt: str, temperature: float, max_length: int) -> str:
+        from Fuzz4All.util.util import simple_parse
+
+        resp = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=max(temperature, 1e-2),
+            max_tokens=max_length,
+        )
+        content = resp.choices[0].message.content or ""
+        code = simple_parse(content)
+        return code if code else content
+
+    def generate(
+        self, prompt, batch_size=10, temperature=1.0, max_length=512
+    ) -> List[str]:
+        from concurrent.futures import ThreadPoolExecutor
+
+        outputs: List[str] = [""] * batch_size
+        with ThreadPoolExecutor(max_workers=min(batch_size, 8)) as ex:
+            futures = {
+                ex.submit(self._one_call, prompt, temperature, max_length): i
+                for i in range(batch_size)
+            }
+            for fut in futures:
+                i = futures[fut]
+                try:
+                    outputs[i] = fut.result()
+                except Exception as e:
+                    outputs[i] = f"// OPENAI_ERROR: {e}"
+        return outputs
 
 
 class StarCoder:

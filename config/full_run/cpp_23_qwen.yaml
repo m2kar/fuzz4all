@@ -1,0 +1,32 @@
+# Short validation config for reproducing Fuzz4All with local OpenAI-compatible
+# gateway (LiteLLM/vLLM) serving qwen3-coder-30b-a3b.
+
+fuzzing:
+  output_folder: outputs/full_run/cpp_qwen
+  num: 1000000
+  total_time: 0.25      # 15 minutes
+  log_level: 3
+  otf: true
+  resume: false
+  evaluate: false
+  use_hand_written_prompt: true
+  no_input_prompt: false
+  prompt_strategy: 2
+
+target:
+  language: cpp
+  path_documentation: config/documentation/cpp/cpp_23.md
+  path_example_code:
+  trigger_to_generate_input: "/* Please create a very short program which uses new C++ features in a complex way */"
+  input_hint: "#include <iostream>"
+  path_hand_written_prompt: config/documentation/cpp/cpp_23_shortened.md
+  target_string: ""
+
+llm:
+  temperature: 1.0
+  batch_size: 4
+  device: cpu
+  model_name: openai/qwen3-coder-30b-a3b
+  base_url: http://localhost:4000/v1
+  api_key: ""
+  max_length: 1024
