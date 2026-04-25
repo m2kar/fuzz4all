@@ -73,7 +73,8 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+# (PyBuilder writes a top-level `target/` build directory; we exclude only that.)
+/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints

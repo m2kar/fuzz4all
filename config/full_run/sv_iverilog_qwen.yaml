@@ -1,0 +1,32 @@
+# Short validation config for the SystemVerilog baseline using iverilog.
+# Mirrors cpp_23_qwen.yaml but with SV docs and a top-named module hint.
+
+fuzzing:
+  output_folder: outputs/full_run/sv_iverilog_qwen
+  num: 1000000
+  total_time: 0.25      # 15 minutes
+  log_level: 3
+  otf: true
+  resume: false
+  evaluate: false
+  use_hand_written_prompt: true
+  no_input_prompt: false
+  prompt_strategy: 2
+
+target:
+  language: systemverilog
+  path_documentation: config/documentation/systemverilog/sv.md
+  path_example_code:
+  trigger_to_generate_input: "/* Please create a short self-contained SystemVerilog module named `top` that exercises SV 2012 features */"
+  input_hint: ""
+  path_hand_written_prompt: config/documentation/systemverilog/sv_shortened.md
+  target_string: ""
+
+llm:
+  temperature: 1.0
+  batch_size: 4
+  device: cpu
+  model_name: openai/qwen3-coder-30b-a3b
+  base_url: http://localhost:4000/v1
+  api_key: ""
+  max_length: 1024
