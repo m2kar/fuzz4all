@@ -5,7 +5,6 @@ import time
 from enum import Enum
 from typing import Any, Dict, List, Tuple, Union
 
-import torch
 from rich.progress import track
 
 from Fuzz4All.model import make_model
@@ -273,7 +272,12 @@ class Target(object):
             # catch cuda out of memory error.
             self.m_logger.logo("cuda out of memory...", level=LEVEL.INFO)
             del self.model
-            torch.cuda.empty_cache()
+            try:
+                import torch  # type: ignore
+
+                torch.cuda.empty_cache()
+            except ImportError:
+                pass
             return False
         new_fos = []
         for fo in fos:

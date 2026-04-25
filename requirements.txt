@@ -2,8 +2,9 @@ pre-commit
 rich
 openai
 tiktoken
-torch
-transformers
+# torch and transformers are only needed for the StarCoder (HuggingFace) backend.
+# The OpenAI-compatible (openai/...) and ollama paths do not require them.
+# Install via: pip install torch transformers   (or torch --index-url ... for CPU-only)
 python-dotenv
 click
 PyYAML

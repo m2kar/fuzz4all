@@ -3,8 +3,6 @@ import subprocess
 import time
 from typing import List, Union
 
-import torch
-
 from Fuzz4All.target.target import FResult, Target
 from Fuzz4All.util.Logger import LEVEL
 from Fuzz4All.util.util import comment_remover

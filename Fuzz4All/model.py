@@ -1,14 +1,6 @@
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    StoppingCriteria,
-    StoppingCriteriaList,
-)
-
 
 def is_ollama_model(model_name: str) -> bool:
     return model_name.startswith("ollama/")
@@ -45,48 +37,69 @@ def make_model(eos: list, model_name: str, device: str, max_length: int, llm_cfg
     return StarCoder(model_name, device, eos, max_length)
 
 
-torch.cuda.empty_cache()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # disable warning
 EOF_STRINGS = ["<|endoftext|>", "###"]
 
 
-class EndOfFunctionCriteria(StoppingCriteria):
-    def __init__(self, start_length, eos, tokenizer, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.start_length = start_length
-        self.eos = eos
-        self.tokenizer = tokenizer
-        self.end_length = {}
+def _import_hf_runtime():
+    """Lazy import of torch + transformers, only needed for the StarCoder backend.
 
-    def __call__(self, input_ids, scores, **kwargs):
-        """Returns true if all generated sequences contain any of the end-of-function strings."""
-        decoded_generations = self.tokenizer.batch_decode(
-            input_ids[:, self.start_length :]
-        )
-        done = []
-        for index, decoded_generation in enumerate(decoded_generations):
-            finished = any(
-                [stop_string in decoded_generation for stop_string in self.eos]
+    Kept inside this helper so the OpenAI-compatible path (and ollama path) can
+    run with neither dependency installed.
+    """
+    import torch  # type: ignore
+    from transformers import (  # type: ignore
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        StoppingCriteria,
+        StoppingCriteriaList,
+    )
+
+    return torch, AutoModelForCausalLM, AutoTokenizer, StoppingCriteria, StoppingCriteriaList
+
+
+def _make_end_of_function_criteria(start_length, eos, tokenizer):
+    """Build an EndOfFunctionCriteria instance — defined here as a closure so
+    that importing this module does not require `transformers` on the
+    OpenAI/ollama paths."""
+    from transformers import StoppingCriteria  # type: ignore
+
+    class EndOfFunctionCriteria(StoppingCriteria):
+        def __init__(self, start_length, eos, tokenizer):
+            super().__init__()
+            self.start_length = start_length
+            self.eos = eos
+            self.tokenizer = tokenizer
+            self.end_length = {}
+
+        def __call__(self, input_ids, scores, **kwargs):
+            decoded_generations = self.tokenizer.batch_decode(
+                input_ids[:, self.start_length :]
             )
-            if (
-                finished and index not in self.end_length
-            ):  # ensures first time we see it
-                for stop_string in self.eos:
-                    if stop_string in decoded_generation:
-                        self.end_length[index] = len(
-                            input_ids[
-                                index,  # get length of actual generation
-                                self.start_length : -len(
-                                    self.tokenizer.encode(
-                                        stop_string,
-                                        add_special_tokens=False,
-                                        return_tensors="pt",
-                                    )[0]
-                                ),
-                            ]
-                        )
-            done.append(finished)
-        return all(done)
+            done = []
+            for index, decoded_generation in enumerate(decoded_generations):
+                finished = any(
+                    stop_string in decoded_generation for stop_string in self.eos
+                )
+                if finished and index not in self.end_length:
+                    for stop_string in self.eos:
+                        if stop_string in decoded_generation:
+                            self.end_length[index] = len(
+                                input_ids[
+                                    index,
+                                    self.start_length : -len(
+                                        self.tokenizer.encode(
+                                            stop_string,
+                                            add_special_tokens=False,
+                                            return_tensors="pt",
+                                        )[0]
+                                    ),
+                                ]
+                            )
+                done.append(finished)
+            return all(done)
+
+    return EndOfFunctionCriteria(start_length, eos, tokenizer)
 
 
 class OpenAIChatModel:
@@ -148,15 +161,13 @@ class StarCoder:
     def __init__(
         self, model_name: str, device: str, eos: List, max_length: int
     ) -> None:
+        torch, AutoModelForCausalLM, AutoTokenizer, _, _ = _import_hf_runtime()
+        torch.cuda.empty_cache()
         checkpoint = model_name
         self.device = device
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            checkpoint,
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         self.model = (
-            AutoModelForCausalLM.from_pretrained(
-                checkpoint,
-            )
+            AutoModelForCausalLM.from_pretrained(checkpoint)
             .to(torch.bfloat16)
             .to(device)
         )
@@ -166,9 +177,19 @@ class StarCoder:
         self.suffix_token = "<fim_suffix><fim_middle>"
         self.skip_special_tokens = False
 
-    @torch.inference_mode()
     def generate(
         self, prompt, batch_size=10, temperature=1.0, max_length=512
+    ) -> List[str]:
+        import torch  # type: ignore
+        from transformers import StoppingCriteriaList  # type: ignore
+
+        with torch.inference_mode():
+            return self._generate_inner(
+                prompt, batch_size, temperature, max_length, StoppingCriteriaList
+            )
+
+    def _generate_inner(
+        self, prompt, batch_size, temperature, max_length, StoppingCriteriaList
     ) -> List[str]:
         input_str = self.prefix_token + prompt + self.suffix_token
         input_tokens = self.tokenizer.encode(input_str, return_tensors="pt").to(
@@ -177,7 +198,7 @@ class StarCoder:
 
         scores = StoppingCriteriaList(
             [
-                EndOfFunctionCriteria(
+                _make_end_of_function_criteria(
                     start_length=len(input_tokens[0]),
                     eos=self.eos,
                     tokenizer=self.tokenizer,
