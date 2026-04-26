@@ -143,6 +143,7 @@ class OpenAIChatModel:
         from concurrent.futures import ThreadPoolExecutor
 
         outputs: List[str] = [""] * batch_size
+        errors: list = []
         with ThreadPoolExecutor(max_workers=min(batch_size, 8)) as ex:
             futures = {
                 ex.submit(self._one_call, prompt, temperature, max_length): i
@@ -153,7 +154,11 @@ class OpenAIChatModel:
                 try:
                     outputs[i] = fut.result()
                 except Exception as e:
-                    outputs[i] = f"// OPENAI_ERROR: {e}"
+                    errors.append(e)
+        if errors:
+            raise RuntimeError(
+                f"LLM API call failed ({len(errors)}/{batch_size}): {errors[0]}"
+            )
         return outputs
 
 

@@ -267,9 +267,9 @@ class Target(object):
         try:
             fos = self.generate_model()
         except RuntimeError:
-            # catch cuda out of memory error.
-            self.m_logger.logo("cuda out of memory...", level=LEVEL.INFO)
-            del self.model
+            self.m_logger.logo("generation RuntimeError", level=LEVEL.INFO)
+            if hasattr(self, "model"):
+                del self.model
             try:
                 import torch  # type: ignore
 
