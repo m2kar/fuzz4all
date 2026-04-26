@@ -5,8 +5,6 @@ import time
 from enum import Enum
 from typing import Any, Dict, List, Tuple, Union
 
-from rich.progress import track
-
 from Fuzz4All.model import make_model
 from Fuzz4All.util.Logger import LEVEL, Logger
 from Fuzz4All.util.util import simple_parse
@@ -366,6 +364,8 @@ class Target(object):
             self.v_logger.logo("{} timed out".format(file_name), LEVEL.VERBOSE)
 
     def validate_all(self):
+        from rich.progress import track  # lazy: only the fuzz() driver needs this
+
         for fuzz_output in track(
             glob.glob(self.folder + "/*.fuzz"),
             description="Validating",
