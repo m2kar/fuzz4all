@@ -124,7 +124,7 @@ class OpenAIChatModel:
         self.eos = EOF_STRINGS + (eos or [])
         self.max_length = max_length
 
-    def _one_call(self, prompt: str, temperature: float, max_length: int) -> str:
+    def _one_call(self, prompt: str, temperature: float, max_length: int) -> tuple[str, dict]:
         from Fuzz4All.util.util import simple_parse
 
         resp = self.client.chat.completions.create(
@@ -135,13 +135,20 @@ class OpenAIChatModel:
         )
         content = resp.choices[0].message.content or ""
         code = simple_parse(content)
-        return code if code else content
+        usage = getattr(resp, "usage", None)
+        usage_dict = {
+            "calls": 1,
+            "prompt_tokens": (getattr(usage, "prompt_tokens", 0) or 0) if usage else 0,
+            "completion_tokens": (getattr(usage, "completion_tokens", 0) or 0) if usage else 0,
+        }
+        return (code if code else content, usage_dict)
 
     def generate(
         self, prompt, batch_size=10, temperature=1.0, max_length=512
     ) -> List[str]:
         from concurrent.futures import ThreadPoolExecutor
 
+        self.last_usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
         outputs: List[str] = [""] * batch_size
         errors: list = []
         with ThreadPoolExecutor(max_workers=min(batch_size, 8)) as ex:
@@ -152,7 +159,11 @@ class OpenAIChatModel:
             for fut in futures:
                 i = futures[fut]
                 try:
-                    outputs[i] = fut.result()
+                    code, usage = fut.result()
+                    outputs[i] = code
+                    self.last_usage["calls"] += usage["calls"]
+                    self.last_usage["prompt_tokens"] += usage["prompt_tokens"]
+                    self.last_usage["completion_tokens"] += usage["completion_tokens"]
                 except Exception as e:
                     errors.append(e)
         if errors:
