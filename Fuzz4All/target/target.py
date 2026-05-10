@@ -101,15 +101,18 @@ class Target(object):
         target = config_dict["target"]
         path_documentation = target["path_documentation"]
         if path_documentation is not None:
-            documentation = open(path_documentation, "r").read()
+            with open(path_documentation, "r") as _f:
+                documentation = _f.read()
         path_example_code = target["path_example_code"]
         if path_example_code is not None:
-            example_code = open(path_example_code, "r").read()
+            with open(path_example_code, "r") as _f:
+                example_code = _f.read()
         trigger_to_generate_input = target["trigger_to_generate_input"]
         input_hint = target["input_hint"]
         path_hand_written_prompt = target["path_hand_written_prompt"]
         if path_hand_written_prompt is not None:
-            hand_written_prompt = open(path_hand_written_prompt, "r").read()
+            with open(path_hand_written_prompt, "r") as _f:
+                hand_written_prompt = _f.read()
         target_string = target["target_string"]
         dict_compat = {
             "docstring": documentation,
